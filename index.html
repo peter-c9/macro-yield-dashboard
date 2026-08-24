@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>總經與美股趨勢儀表板</title>
+    <!-- 引入 Chart.js 繪圖庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8f9fa; margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; }
+        .chart-container { position: relative; height: 60vh; width: 100%; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>📈 美國 10 年期公債殖利率 vs. SPY 趨勢圖</h2>
+    <div class="chart-container">
+        <canvas id="yieldChart"></canvas>
+    </div>
+</div>
+
+<script>
+    // 解析 CSV 內容的簡單函數
+    function parseCSV(csvText) {
+        const lines = csvText.trim().split('\n');
+        const dates = [];
+        const prices = [];
+        
+        // 從第 2 行開始讀 (跳過標頭 Date,Close)
+        for(let i = 1; i < lines.length; i++) {
+            const row = lines[i].split(',');
+            if(row.length >= 2) {
+                dates.push(row[0]);
+                prices.push(parseFloat(row[1]));
+            }
+        }
+        return { dates, prices };
+    }
+
+    async function loadDataAndRenderChart() {
+        try {
+            // 同時發送請求去抓取兩個 CSV 檔案
+            const [spyResponse, tnxResponse] = await Promise.all([
+                fetch('./data/SPY.csv'),
+                fetch('./data/10Y_Yield.csv')
+            ]);
+
+            const spyCsv = await spyResponse.text();
+            const tnxCsv = await tnxResponse.text();
+
+            const spyData = parseCSV(spyCsv);
+            const tnxData = parseCSV(tnxCsv);
+
+            // 繪製圖表
+            const ctx = document.getElementById('yieldChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    // 假設兩者日期是對齊的，以 SPY 的日期作為 X 軸
+                    labels: spyData.dates, 
+                    datasets: [
+                        {
+                            label: 'SPY ETF 價格 (右軸)',
+                            data: spyData.prices,
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                            yAxisID: 'y-price',
+                            borderWidth: 2,
+                            pointRadius: 0 // 隱藏資料點讓線條更平滑
+                        },
+                        {
+                            label: '10年期公債殖利率 % (左軸)',
+                            data: tnxData.prices,
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                            yAxisID: 'y-yield',
+                            borderWidth: 2,
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        'y-yield': {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: '殖利率 (%)' },
+                            grid: { drawOnChartArea: true }
+                        },
+                        'y-price': {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: '價格 (USD)' },
+                            grid: { drawOnChartArea: false } // 避免左右網格線打架
+                        }
+                    }
+                }
+            });
+        } catch (error) {
+            console.error("資料載入失敗，請確認 data 資料夾中是否存在對應的 CSV 檔:", error);
+        }
+    }
+
+    // 網頁載入完成後執行
+    window.onload = loadDataAndRenderChart;
+</script>
+
+</body>
+</html>
