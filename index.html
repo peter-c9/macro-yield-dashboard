@@ -4,46 +4,128 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>總經與美股趨勢儀表板</title>
-    <!-- 1. 引入 Chart.js 繪圖庫 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- 2. 引入 Hammer.js (支援拖曳平移必備) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
-    <!-- 3. 引入 Chart.js Zoom 插件 -->
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1e1e1e; color: #fff; margin: 0; padding: 20px; }
-        .container { max-width: 1200px; margin: 0 auto; background: #2d2d2d; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        h2 { text-align: center; color: #fff; }
-        .chart-container { position: relative; height: 70vh; width: 100%; margin-top: 20px; }
-        /* 美化重設按鈕 */
-        .btn-reset { display: block; margin: 0 auto; padding: 10px 20px; background-color: #007acc; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; transition: 0.3s; }
+        .container { max-width: 1200px; margin: 0 auto; background: #2d2d2d; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        h2 { text-align: center; color: #fff; margin-bottom: 20px; }
+        
+        /* 控制面板排版 */
+        .controls-panel { display: flex; justify-content: space-between; align-items: center; background: #3d3d3d; padding: 15px; border-radius: 8px; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
+        .control-group { display: flex; align-items: center; gap: 10px; }
+        .control-group label { font-weight: bold; color: #ccc; }
+        select, input[type="number"] { padding: 8px; border-radius: 5px; border: 1px solid #555; background: #222; color: #fff; font-size: 14px; }
+        input[type="number"] { width: 70px; }
+        
+        .btn-reset { padding: 10px 20px; background-color: #007acc; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: 0.3s; font-weight: bold; }
         .btn-reset:hover { background-color: #005999; }
+
+        /* 上下圖表區塊 */
+        .chart-wrapper { background: #222; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #444; }
+        .chart-container { position: relative; height: 35vh; width: 100%; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>📈 美國 10 年期公債殖利率 vs. SPY 趨勢圖</h2>
-    <!-- 增加一個重設縮放的按鈕 -->
-    <button class="btn-reset" onclick="resetChartZoom()">🔄 重設縮放比例</button>
+    <h2>📊 全球資產與總經趨勢分析</h2>
     
-    <div class="chart-container">
-        <canvas id="yieldChart"></canvas>
+    <!-- 控制面板 -->
+    <div class="controls-panel">
+        <div class="control-group">
+            <label>📈 上方圖表 (ETF/資產)：</label>
+            <select id="etfSelect" onchange="updateEtfChart()">
+                <option value="SPY.csv">SPY (標普500)</option>
+                <option value="QQQ.csv">QQQ (納斯達克)</option>
+                <option value="SOXX.csv">SOXX (半導體)</option>
+                <option value="Gold_GLD.csv">GLD (黃金)</option>
+                <option value="Silver_SLV.csv">SLV (白銀)</option>
+                <option value="Bitcoin_IBIT.csv">IBIT (比特幣)</option>
+            </select>
+            <label>均線週期：</label>
+            <input type="number" id="etfMaPeriod" value="60" min="1" max="1000" onchange="updateEtfChart()">
+        </div>
+
+        <div class="control-group">
+            <label>📉 下方圖表 (公債殖利率)：</label>
+            <select id="yieldSelect" onchange="updateYieldChart()">
+                <option value="10Y_Yield.csv">10年期公債殖利率</option>
+                <option value="30Y_Yield.csv">30年期公債殖利率</option>
+            </select>
+            <label>均線週期：</label>
+            <input type="number" id="yieldMaPeriod" value="200" min="1" max="1000" onchange="updateYieldChart()">
+        </div>
+
+        <button class="btn-reset" onclick="resetChartsZoom()">🔄 重設縮放</button>
+    </div>
+
+    <!-- 上方 ETF 圖表 -->
+    <div class="chart-wrapper">
+        <div class="chart-container">
+            <canvas id="etfChart"></canvas>
+        </div>
+    </div>
+
+    <!-- 下方 殖利率 圖表 -->
+    <div class="chart-wrapper">
+        <div class="chart-container">
+            <canvas id="yieldChart"></canvas>
+        </div>
     </div>
 </div>
 
 <script>
-    // 宣告一個全域變數來儲存圖表實例
-    let myChart = null;
+    let etfChartInstance = null;
+    let yieldChartInstance = null;
 
+    // 快取資料，避免每次切換選單都重新下載 CSV
+    const dataCache = {};
+
+    // 共用的圖表設定 (包含字體顏色、縮放功能)
+    const commonChartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            zoom: {
+                pan: { enabled: true, mode: 'x' },
+                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+            },
+            legend: { labels: { color: '#ccc' } }
+        },
+        scales: {
+            x: { ticks: { color: '#ccc', maxTicksLimit: 15 }, grid: { color: 'rgba(255, 255, 255, 0.05)' } },
+            y: { ticks: { color: '#ccc' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }
+        }
+    };
+
+    // 計算簡單移動平均線 (SMA) 的函數
+    function calculateSMA(data, period) {
+        const sma = [];
+        for (let i = 0; i < data.length; i++) {
+            if (i < period - 1) {
+                sma.push(null); // 前期天數不足時補空值，讓圖表不要亂畫
+            } else {
+                let sum = 0;
+                for (let j = 0; j < period; j++) {
+                    sum += data[i - j];
+                }
+                sma.push(sum / period);
+            }
+        }
+        return sma;
+    }
+
+    // 解析 CSV
     function parseCSV(csvText) {
         const lines = csvText.trim().split('\n');
         const dates = [];
         const prices = [];
-        
         for(let i = 1; i < lines.length; i++) {
             const row = lines[i].split(',');
-            if(row.length >= 2) {
+            if(row.length >= 2 && row[1]) {
                 dates.push(row[0]);
                 prices.push(parseFloat(row[1]));
             }
@@ -51,106 +133,115 @@
         return { dates, prices };
     }
 
-    async function loadDataAndRenderChart() {
+    // 抓取並解析 CSV (加入快取機制)
+    async function fetchData(filename) {
+        if (dataCache[filename]) {
+            return dataCache[filename];
+        }
         try {
-            const [spyResponse, tnxResponse] = await Promise.all([
-                fetch('./data/SPY.csv'),
-                fetch('./data/10Y_Yield.csv')
-            ]);
-
-            const spyCsv = await spyResponse.text();
-            const tnxCsv = await tnxResponse.text();
-
-            const spyData = parseCSV(spyCsv);
-            const tnxData = parseCSV(tnxCsv);
-
-            const ctx = document.getElementById('yieldChart').getContext('2d');
-            
-            // 如果圖表已經存在，先銷毀它，避免重複渲染
-            if (myChart) {
-                myChart.destroy();
-            }
-
-            myChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: spyData.dates, 
-                    datasets: [
-                        {
-                            label: 'SPY ETF 價格 (右軸)',
-                            data: spyData.prices,
-                            borderColor: 'rgba(54, 162, 235, 1)',
-                            yAxisID: 'y-price',
-                            borderWidth: 1.5,
-                            pointRadius: 0
-                        },
-                        {
-                            label: '10年期公債殖利率 % (左軸)',
-                            data: tnxData.prices,
-                            borderColor: 'rgba(255, 99, 132, 1)',
-                            yAxisID: 'y-yield',
-                            borderWidth: 1.5,
-                            pointRadius: 0
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: {
-                        // 啟動 Zoom 插件的核心設定
-                        zoom: {
-                            pan: {
-                                enabled: true, // 允許拖曳
-                                mode: 'x',     // 限制只能水平拖曳時間軸
-                            },
-                            zoom: {
-                                wheel: {
-                                    enabled: true, // 允許使用滑鼠滾輪縮放
-                                },
-                                pinch: {
-                                    enabled: true  // 允許觸控螢幕雙指縮放
-                                },
-                                mode: 'x', // 限制只能水平縮放，確保 Y 軸價格比例不會亂掉
-                            }
-                        }
-                    },
-                    scales: {
-                        'y-yield': {
-                            type: 'linear',
-                            position: 'left',
-                            title: { display: true, text: '殖利率 (%)', color: '#ccc' },
-                            grid: { color: 'rgba(255, 255, 255, 0.1)' },
-                            ticks: { color: '#ccc' }
-                        },
-                        'y-price': {
-                            type: 'linear',
-                            position: 'right',
-                            title: { display: true, text: '價格 (USD)', color: '#ccc' },
-                            grid: { drawOnChartArea: false },
-                            ticks: { color: '#ccc' }
-                        },
-                        x: {
-                            ticks: { color: '#ccc', maxTicksLimit: 20 },
-                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                        }
-                    }
-                }
-            });
+            const response = await fetch(`./data/${filename}`);
+            if (!response.ok) throw new Error("File not found");
+            const csvText = await response.text();
+            const parsedData = parseCSV(csvText);
+            dataCache[filename] = parsedData; // 存入快取
+            return parsedData;
         } catch (error) {
-            console.error("資料載入失敗:", error);
+            console.error(`讀取 ${filename} 失敗:`, error);
+            return null;
         }
     }
 
-    // 觸發重設縮放的函數
-    function resetChartZoom() {
-        if (myChart) {
-            myChart.resetZoom();
-        }
+    // 更新上方 ETF 圖表
+    async function updateEtfChart() {
+        const filename = document.getElementById('etfSelect').value;
+        const maPeriod = parseInt(document.getElementById('etfMaPeriod').value) || 60;
+        const labelName = document.getElementById('etfSelect').options[document.getElementById('etfSelect').selectedIndex].text;
+        
+        const data = await fetchData(filename);
+        if (!data) return;
+
+        const maData = calculateSMA(data.prices, maPeriod);
+        const ctx = document.getElementById('etfChart').getContext('2d');
+
+        if (etfChartInstance) etfChartInstance.destroy();
+
+        etfChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.dates,
+                datasets: [
+                    {
+                        label: `${labelName} 價格`,
+                        data: data.prices,
+                        borderColor: 'rgba(54, 162, 235, 0.8)',
+                        borderWidth: 1.5,
+                        pointRadius: 0
+                    },
+                    {
+                        label: `${maPeriod}日 均線`,
+                        data: maData,
+                        borderColor: 'rgba(255, 159, 64, 1)',
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        borderDash: [5, 5] // 將均線設定為虛線以利辨識
+                    }
+                ]
+            },
+            options: commonChartOptions
+        });
     }
 
-    window.onload = loadDataAndRenderChart;
+    // 更新下方殖利率圖表
+    async function updateYieldChart() {
+        const filename = document.getElementById('yieldSelect').value;
+        const maPeriod = parseInt(document.getElementById('yieldMaPeriod').value) || 200;
+        const labelName = document.getElementById('yieldSelect').options[document.getElementById('yieldSelect').selectedIndex].text;
+        
+        const data = await fetchData(filename);
+        if (!data) return;
+
+        const maData = calculateSMA(data.prices, maPeriod);
+        const ctx = document.getElementById('yieldChart').getContext('2d');
+
+        if (yieldChartInstance) yieldChartInstance.destroy();
+
+        yieldChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.dates,
+                datasets: [
+                    {
+                        label: `${labelName} (%)`,
+                        data: data.prices,
+                        borderColor: 'rgba(255, 99, 132, 0.8)',
+                        borderWidth: 1.5,
+                        pointRadius: 0
+                    },
+                    {
+                        label: `${maPeriod}日 均線`,
+                        data: maData,
+                        borderColor: 'rgba(255, 205, 86, 1)',
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        borderDash: [5, 5]
+                    }
+                ]
+            },
+            options: commonChartOptions
+        });
+    }
+
+    // 重設兩個圖表的縮放
+    function resetChartsZoom() {
+        if (etfChartInstance) etfChartInstance.resetZoom();
+        if (yieldChartInstance) yieldChartInstance.resetZoom();
+    }
+
+    // 網頁載入完成後，初始化兩個圖表
+    window.onload = () => {
+        updateEtfChart();
+        updateYieldChart();
+    };
 </script>
 
 </body>
