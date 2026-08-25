@@ -12,17 +12,15 @@
         .container { max-width: 1200px; margin: 0 auto; background: #2d2d2d; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         h2 { text-align: center; color: #fff; margin-bottom: 20px; }
         
-        /* 控制面板排版 */
         .controls-panel { display: flex; justify-content: space-between; align-items: center; background: #3d3d3d; padding: 15px; border-radius: 8px; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
         .control-group { display: flex; align-items: center; gap: 10px; }
         .control-group label { font-weight: bold; color: #ccc; }
         select, input[type="number"] { padding: 8px; border-radius: 5px; border: 1px solid #555; background: #222; color: #fff; font-size: 14px; }
         input[type="number"] { width: 70px; }
         
-        .btn-reset { padding: 10px 20px; background-color: #007acc; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: 0.3s; font-weight: bold; }
+        .btn-reset { padding: 10px 20px; background-color: #007acc; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; }
         .btn-reset:hover { background-color: #005999; }
 
-        /* 上下圖表區塊 */
         .chart-wrapper { background: #222; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #444; }
         .chart-container { position: relative; height: 35vh; width: 100%; }
     </style>
@@ -32,7 +30,6 @@
 <div class="container">
     <h2>📊 全球資產與總經趨勢分析</h2>
     
-    <!-- 控制面板 -->
     <div class="controls-panel">
         <div class="control-group">
             <label>📈 上方圖表 (ETF/資產)：</label>
@@ -61,14 +58,12 @@
         <button class="btn-reset" onclick="resetChartsZoom()">🔄 重設縮放</button>
     </div>
 
-    <!-- 上方 ETF 圖表 -->
     <div class="chart-wrapper">
         <div class="chart-container">
             <canvas id="etfChart"></canvas>
         </div>
     </div>
 
-    <!-- 下方 殖利率 圖表 -->
     <div class="chart-wrapper">
         <div class="chart-container">
             <canvas id="yieldChart"></canvas>
@@ -79,46 +74,97 @@
 <script>
     let etfChartInstance = null;
     let yieldChartInstance = null;
-
-    // 快取資料，避免每次切換選單都重新下載 CSV
     const dataCache = {};
 
-    // 共用的圖表設定 (包含字體顏色、縮放功能)
-    const commonChartOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-            zoom: {
-                pan: { enabled: true, mode: 'x' },
-                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
-            },
-            legend: { labels: { color: '#ccc' } }
+    // =========================================
+    // 1. 同步 X 軸縮放與平移的邏輯
+    // =========================================
+    function syncChartsScale(sourceChart) {
+        const targetChart = sourceChart === etfChartInstance ? yieldChartInstance : etfChartInstance;
+        if (!targetChart) return;
+        // 把目標圖表的 X 軸範圍鎖定成跟來源圖表一模一樣
+        targetChart.options.scales.x.min = sourceChart.scales.x.min;
+        targetChart.options.scales.x.max = sourceChart.scales.x.max;
+        targetChart.update('none'); // 無縫更新，不觸發動畫
+    }
+
+    const sharedZoomOptions = {
+        pan: {
+            enabled: true,
+            mode: 'x',
+            onPan: ({ chart }) => syncChartsScale(chart)
         },
-        scales: {
-            x: { ticks: { color: '#ccc', maxTicksLimit: 15 }, grid: { color: 'rgba(255, 255, 255, 0.05)' } },
-            y: { ticks: { color: '#ccc' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }
+        zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            mode: 'x',
+            onZoom: ({ chart }) => syncChartsScale(chart)
         }
     };
 
-    // 計算簡單移動平均線 (SMA) 的函數
+    // =========================================
+    // 2. 自訂擴充套件：跨圖表垂直十字線
+    // =========================================
+    let crosshairX = null; // 全域變數，紀錄滑鼠目前的 X 座標
+
+    const crosshairPlugin = {
+        id: 'crosshair',
+        afterEvent: (chart, args) => {
+            const { event, inChartArea } = args;
+            if (event.type === 'mousemove') {
+                if (inChartArea) {
+                    crosshairX = event.x; // 更新滑鼠位置
+                    // 呼叫另一張圖表重新繪製以顯示十字線
+                    const otherChart = chart === etfChartInstance ? yieldChartInstance : etfChartInstance;
+                    if (otherChart) otherChart.draw();
+                } else {
+                    crosshairX = null; // 滑鼠離開圖表區域時清除
+                    const otherChart = chart === etfChartInstance ? yieldChartInstance : etfChartInstance;
+                    if (otherChart) otherChart.draw();
+                }
+            } else if (event.type === 'mouseout') {
+                crosshairX = null;
+                const otherChart = chart === etfChartInstance ? yieldChartInstance : etfChartInstance;
+                if (otherChart) otherChart.draw();
+            }
+        },
+        afterDraw: (chart) => {
+            if (crosshairX !== null) {
+                const ctx = chart.ctx;
+                const { top, bottom, left, right } = chart.chartArea;
+                
+                // 確保垂直線只畫在圖表內部區域
+                if (crosshairX >= left && crosshairX <= right) {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(crosshairX, top);
+                    ctx.lineTo(crosshairX, bottom);
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                    ctx.setLineDash([5, 5]); // 設定虛線樣式
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+        }
+    };
+
+    // =========================================
+    // 3. 資料處理與圖表渲染
+    // =========================================
     function calculateSMA(data, period) {
         const sma = [];
         for (let i = 0; i < data.length; i++) {
-            if (i < period - 1) {
-                sma.push(null); // 前期天數不足時補空值，讓圖表不要亂畫
-            } else {
+            if (i < period - 1) sma.push(null);
+            else {
                 let sum = 0;
-                for (let j = 0; j < period; j++) {
-                    sum += data[i - j];
-                }
+                for (let j = 0; j < period; j++) sum += data[i - j];
                 sma.push(sum / period);
             }
         }
         return sma;
     }
 
-    // 解析 CSV
     function parseCSV(csvText) {
         const lines = csvText.trim().split('\n');
         const dates = [];
@@ -133,17 +179,13 @@
         return { dates, prices };
     }
 
-    // 抓取並解析 CSV (加入快取機制)
     async function fetchData(filename) {
-        if (dataCache[filename]) {
-            return dataCache[filename];
-        }
+        if (dataCache[filename]) return dataCache[filename];
         try {
             const response = await fetch(`./data/${filename}`);
             if (!response.ok) throw new Error("File not found");
-            const csvText = await response.text();
-            const parsedData = parseCSV(csvText);
-            dataCache[filename] = parsedData; // 存入快取
+            const parsedData = parseCSV(await response.text());
+            dataCache[filename] = parsedData;
             return parsedData;
         } catch (error) {
             console.error(`讀取 ${filename} 失敗:`, error);
@@ -151,7 +193,9 @@
         }
     }
 
-    // 更新上方 ETF 圖表
+    // 共同的 X 軸設定
+    const commonXAxis = { ticks: { color: '#ccc', maxTicksLimit: 15 }, grid: { color: 'rgba(255, 255, 255, 0.05)' } };
+
     async function updateEtfChart() {
         const filename = document.getElementById('etfSelect').value;
         const maPeriod = parseInt(document.getElementById('etfMaPeriod').value) || 60;
@@ -159,39 +203,32 @@
         
         const data = await fetchData(filename);
         if (!data) return;
-
         const maData = calculateSMA(data.prices, maPeriod);
-        const ctx = document.getElementById('etfChart').getContext('2d');
 
         if (etfChartInstance) etfChartInstance.destroy();
-
-        etfChartInstance = new Chart(ctx, {
+        etfChartInstance = new Chart(document.getElementById('etfChart').getContext('2d'), {
             type: 'line',
             data: {
                 labels: data.dates,
                 datasets: [
-                    {
-                        label: `${labelName} 價格`,
-                        data: data.prices,
-                        borderColor: 'rgba(54, 162, 235, 0.8)',
-                        borderWidth: 1.5,
-                        pointRadius: 0
-                    },
-                    {
-                        label: `${maPeriod}日 均線`,
-                        data: maData,
-                        borderColor: 'rgba(255, 159, 64, 1)',
-                        borderWidth: 1.5,
-                        pointRadius: 0,
-                        borderDash: [5, 5] // 將均線設定為虛線以利辨識
-                    }
+                    { label: `${labelName} 價格`, data: data.prices, borderColor: 'rgba(54, 162, 235, 0.9)', borderWidth: 1.5, pointRadius: 0 },
+                    { label: `${maPeriod}日 均線`, data: maData, borderColor: 'rgba(255, 159, 64, 1)', borderWidth: 1.5, pointRadius: 0, borderDash: [5, 5] }
                 ]
             },
-            options: commonChartOptions
+            options: {
+                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                plugins: { zoom: sharedZoomOptions, legend: { labels: { color: '#ccc' } } },
+                scales: {
+                    x: commonXAxis,
+                    // 隱藏的左軸(佔位)，讓右軸價格能完美對齊下方圖表
+                    yLeft: { position: 'left', ticks: { display: false }, grid: { drawBorder: false, color: 'transparent' } },
+                    yRight: { position: 'right', ticks: { color: '#ccc' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }
+                }
+            },
+            plugins: [crosshairPlugin] // 載入十字線套件
         });
     }
 
-    // 更新下方殖利率圖表
     async function updateYieldChart() {
         const filename = document.getElementById('yieldSelect').value;
         const maPeriod = parseInt(document.getElementById('yieldMaPeriod').value) || 200;
@@ -199,45 +236,45 @@
         
         const data = await fetchData(filename);
         if (!data) return;
-
         const maData = calculateSMA(data.prices, maPeriod);
-        const ctx = document.getElementById('yieldChart').getContext('2d');
 
         if (yieldChartInstance) yieldChartInstance.destroy();
-
-        yieldChartInstance = new Chart(ctx, {
+        yieldChartInstance = new Chart(document.getElementById('yieldChart').getContext('2d'), {
             type: 'line',
             data: {
                 labels: data.dates,
                 datasets: [
-                    {
-                        label: `${labelName} (%)`,
-                        data: data.prices,
-                        borderColor: 'rgba(255, 99, 132, 0.8)',
-                        borderWidth: 1.5,
-                        pointRadius: 0
-                    },
-                    {
-                        label: `${maPeriod}日 均線`,
-                        data: maData,
-                        borderColor: 'rgba(255, 205, 86, 1)',
-                        borderWidth: 1.5,
-                        pointRadius: 0,
-                        borderDash: [5, 5]
-                    }
+                    { label: `${labelName} (%)`, data: data.prices, borderColor: 'rgba(255, 99, 132, 0.9)', borderWidth: 1.5, pointRadius: 0 },
+                    { label: `${maPeriod}日 均線`, data: maData, borderColor: 'rgba(255, 205, 86, 1)', borderWidth: 1.5, pointRadius: 0, borderDash: [5, 5] }
                 ]
             },
-            options: commonChartOptions
+            options: {
+                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                plugins: { zoom: sharedZoomOptions, legend: { labels: { color: '#ccc' } } },
+                scales: {
+                    x: commonXAxis,
+                    // 殖利率放左軸，右側放一個隱藏軸(佔位)
+                    yLeft: { position: 'left', ticks: { color: '#ccc' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
+                    yRight: { position: 'right', ticks: { display: false }, grid: { drawBorder: false, color: 'transparent' } }
+                }
+            },
+            plugins: [crosshairPlugin] // 載入十字線套件
         });
     }
 
-    // 重設兩個圖表的縮放
     function resetChartsZoom() {
-        if (etfChartInstance) etfChartInstance.resetZoom();
-        if (yieldChartInstance) yieldChartInstance.resetZoom();
+        if (etfChartInstance) {
+            etfChartInstance.options.scales.x.min = undefined;
+            etfChartInstance.options.scales.x.max = undefined;
+            etfChartInstance.update();
+        }
+        if (yieldChartInstance) {
+            yieldChartInstance.options.scales.x.min = undefined;
+            yieldChartInstance.options.scales.x.max = undefined;
+            yieldChartInstance.update();
+        }
     }
 
-    // 網頁載入完成後，初始化兩個圖表
     window.onload = () => {
         updateEtfChart();
         updateYieldChart();
