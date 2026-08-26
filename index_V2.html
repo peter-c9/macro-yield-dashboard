@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>總經與美股趨勢儀表板</title>
+    <!-- 1. 引入 Chart.js 繪圖庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 2. 引入 Hammer.js (支援拖曳平移必備) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <!-- 3. 引入 Chart.js Zoom 插件 -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1e1e1e; color: #fff; margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: #2d2d2d; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        h2 { text-align: center; color: #fff; }
+        .chart-container { position: relative; height: 70vh; width: 100%; margin-top: 20px; }
+        /* 美化重設按鈕 */
+        .btn-reset { display: block; margin: 0 auto; padding: 10px 20px; background-color: #007acc; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; transition: 0.3s; }
+        .btn-reset:hover { background-color: #005999; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>📈 美國 10 年期公債殖利率 vs. SPY 趨勢圖</h2>
+    <!-- 增加一個重設縮放的按鈕 -->
+    <button class="btn-reset" onclick="resetChartZoom()">🔄 重設縮放比例</button>
+    
+    <div class="chart-container">
+        <canvas id="yieldChart"></canvas>
+    </div>
+</div>
+
+<script>
+    // 宣告一個全域變數來儲存圖表實例
+    let myChart = null;
+
+    function parseCSV(csvText) {
+        const lines = csvText.trim().split('\n');
+        const dates = [];
+        const prices = [];
+        
+        for(let i = 1; i < lines.length; i++) {
+            const row = lines[i].split(',');
+            if(row.length >= 2) {
+                dates.push(row[0]);
+                prices.push(parseFloat(row[1]));
+            }
+        }
+        return { dates, prices };
+    }
+
+    async function loadDataAndRenderChart() {
+        try {
+            const [spyResponse, tnxResponse] = await Promise.all([
+                fetch('./data/SPY.csv'),
+                fetch('./data/10Y_Yield.csv')
+            ]);
+
+            const spyCsv = await spyResponse.text();
+            const tnxCsv = await tnxResponse.text();
+
+            const spyData = parseCSV(spyCsv);
+            const tnxData = parseCSV(tnxCsv);
+
+            const ctx = document.getElementById('yieldChart').getContext('2d');
+            
+            // 如果圖表已經存在，先銷毀它，避免重複渲染
+            if (myChart) {
+                myChart.destroy();
+            }
+
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: spyData.dates, 
+                    datasets: [
+                        {
+                            label: 'SPY ETF 價格 (右軸)',
+                            data: spyData.prices,
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            yAxisID: 'y-price',
+                            borderWidth: 1.5,
+                            pointRadius: 0
+                        },
+                        {
+                            label: '10年期公債殖利率 % (左軸)',
+                            data: tnxData.prices,
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            yAxisID: 'y-yield',
+                            borderWidth: 1.5,
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        // 啟動 Zoom 插件的核心設定
+                        zoom: {
+                            pan: {
+                                enabled: true, // 允許拖曳
+                                mode: 'x',     // 限制只能水平拖曳時間軸
+                            },
+                            zoom: {
+                                wheel: {
+                                    enabled: true, // 允許使用滑鼠滾輪縮放
+                                },
+                                pinch: {
+                                    enabled: true  // 允許觸控螢幕雙指縮放
+                                },
+                                mode: 'x', // 限制只能水平縮放，確保 Y 軸價格比例不會亂掉
+                            }
+                        }
+                    },
+                    scales: {
+                        'y-yield': {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: '殖利率 (%)', color: '#ccc' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                            ticks: { color: '#ccc' }
+                        },
+                        'y-price': {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: '價格 (USD)', color: '#ccc' },
+                            grid: { drawOnChartArea: false },
+                            ticks: { color: '#ccc' }
+                        },
+                        x: {
+                            ticks: { color: '#ccc', maxTicksLimit: 20 },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        }
+                    }
+                }
+            });
+        } catch (error) {
+            console.error("資料載入失敗:", error);
+        }
+    }
+
+    // 觸發重設縮放的函數
+    function resetChartZoom() {
+        if (myChart) {
+            myChart.resetZoom();
+        }
+    }
+
+    window.onload = loadDataAndRenderChart;
+</script>
+
+</body>
+</html>
