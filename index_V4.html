@@ -12,18 +12,13 @@
         .container { max-width: 1200px; margin: 0 auto; background: #2d2d2d; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         h2 { text-align: center; color: #fff; margin-bottom: 20px; }
         
-        .controls-panel { display: flex; flex-direction: column; gap: 15px; background: #3d3d3d; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-        .control-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
+        .controls-panel { display: flex; justify-content: space-between; align-items: center; background: #3d3d3d; padding: 15px; border-radius: 8px; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
         .control-group { display: flex; align-items: center; gap: 10px; }
         .control-group label { font-weight: bold; color: #ccc; }
         select, input[type="number"] { padding: 8px; border-radius: 5px; border: 1px solid #555; background: #222; color: #fff; font-size: 14px; }
         input[type="number"] { width: 70px; }
         
-        /* 按鈕樣式美化 */
-        button { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; transition: 0.2s; }
-        .btn-action { background-color: #28a745; color: white; }
-        .btn-action:hover { background-color: #218838; }
-        .btn-reset { background-color: #007acc; color: white; }
+        .btn-reset { padding: 10px 20px; background-color: #007acc; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; }
         .btn-reset:hover { background-color: #005999; }
 
         .chart-wrapper { background: #222; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #444; }
@@ -36,42 +31,31 @@
     <h2>📊 全球資產與總經趨勢分析</h2>
     
     <div class="controls-panel">
-        <!-- 第一排：商品與均線設定 -->
-        <div class="control-row">
-            <div class="control-group">
-                <label>📈 上方圖表 (ETF/資產)：</label>
-                <select id="etfSelect" onchange="updateEtfChart()">
-                    <option value="SPY.csv">SPY (標普500)</option>
-                    <option value="QQQ.csv">QQQ (納斯達克)</option>
-                    <option value="SOXX.csv">SOXX (半導體)</option>
-                    <option value="Gold_GLD.csv">GLD (黃金)</option>
-                    <option value="Silver_SLV.csv">SLV (白銀)</option>
-                    <option value="Bitcoin_IBIT.csv">IBIT (比特幣)</option>
-                </select>
-                <label>均線：</label>
-                <input type="number" id="etfMaPeriod" value="60" min="1" max="1000" onchange="updateEtfChart()">
-            </div>
-
-            <div class="control-group">
-                <label>📉 下方圖表 (公債殖利率)：</label>
-                <select id="yieldSelect" onchange="updateYieldChart()">
-                    <option value="30Y_Yield.csv">30年期公債殖利率</option>
-                    <option value="10Y_Yield.csv">10年期公債殖利率</option>
-                </select>
-                <label>均線：</label>
-                <input type="number" id="yieldMaPeriod" value="60" min="1" max="1000" onchange="updateYieldChart()">
-            </div>
+        <div class="control-group">
+            <label>📈 上方圖表 (ETF/資產)：</label>
+            <select id="etfSelect" onchange="updateEtfChart()">
+                <option value="SPY.csv">SPY (標普500)</option>
+                <option value="QQQ.csv">QQQ (納斯達克)</option>
+                <option value="SOXX.csv">SOXX (半導體)</option>
+                <option value="Gold_GLD.csv">GLD (黃金)</option>
+                <option value="Silver_SLV.csv">SLV (白銀)</option>
+                <option value="Bitcoin_IBIT.csv">IBIT (比特幣)</option>
+            </select>
+            <label>均線週期：</label>
+            <input type="number" id="etfMaPeriod" value="60" min="1" max="1000" onchange="updateEtfChart()">
         </div>
 
-        <!-- 第二排：視角控制 (K棒數量與縮放) -->
-        <div class="control-row" style="background: #2a2a2a; padding: 10px; border-radius: 5px;">
-            <div class="control-group">
-                <label>🔎 觀察區間 (K棒數)：</label>
-                <input type="number" id="visibleBars" value="20" min="5" max="5000">
-                <button class="btn-action" onclick="jumpToLatest()">⏭️ 跳到最新</button>
-            </div>
-            <button class="btn-reset" onclick="resetChartsZoom()">🔄 觀看全景 (所有歷史)</button>
+        <div class="control-group">
+            <label>📉 下方圖表 (公債殖利率)：</label>
+            <select id="yieldSelect" onchange="updateYieldChart()">
+                <option value="10Y_Yield.csv">10年期公債殖利率</option>
+                <option value="30Y_Yield.csv">30年期公債殖利率</option>
+            </select>
+            <label>均線週期：</label>
+            <input type="number" id="yieldMaPeriod" value="200" min="1" max="1000" onchange="updateYieldChart()">
         </div>
+
+        <button class="btn-reset" onclick="resetChartsZoom()">🔄 重設縮放</button>
     </div>
 
     <div class="chart-wrapper">
@@ -93,39 +77,15 @@
     const dataCache = {};
 
     // =========================================
-    // 0. 全局視角狀態控制器
-    // =========================================
-    // 用來記憶目前的縮放/平移位置，避免切換商品時視角跳掉
-    let currentMinLabel = undefined;
-    let currentMaxLabel = undefined;
-
-    function applyGlobalView() {
-        if (etfChartInstance) {
-            etfChartInstance.options.scales.x.min = currentMinLabel;
-            etfChartInstance.options.scales.x.max = currentMaxLabel;
-            etfChartInstance.update('none');
-        }
-        if (yieldChartInstance) {
-            yieldChartInstance.options.scales.x.min = currentMinLabel;
-            yieldChartInstance.options.scales.x.max = currentMaxLabel;
-            yieldChartInstance.update('none');
-        }
-    }
-
-    // =========================================
     // 1. 同步 X 軸縮放與平移的邏輯
     // =========================================
     function syncChartsScale(sourceChart) {
-        // 從觸發動作的圖表中取得目前畫面上可見的起點與終點 Index
-        const minIndex = Math.max(0, Math.round(sourceChart.scales.x.min));
-        const maxIndex = Math.min(sourceChart.data.labels.length - 1, Math.round(sourceChart.scales.x.max));
-        
-        // 轉換為真實的日期標籤
-        currentMinLabel = sourceChart.data.labels[minIndex];
-        currentMaxLabel = sourceChart.data.labels[maxIndex];
-
-        // 套用到兩張圖表
-        applyGlobalView();
+        const targetChart = sourceChart === etfChartInstance ? yieldChartInstance : etfChartInstance;
+        if (!targetChart) return;
+        // 把目標圖表的 X 軸範圍鎖定成跟來源圖表一模一樣
+        targetChart.options.scales.x.min = sourceChart.scales.x.min;
+        targetChart.options.scales.x.max = sourceChart.scales.x.max;
+        targetChart.update('none'); // 無縫更新，不觸發動畫
     }
 
     const sharedZoomOptions = {
@@ -143,36 +103,9 @@
     };
 
     // =========================================
-    // 2. 自訂按鈕動作 (跳到最新 / 全景)
+    // 2. 自訂擴充套件：跨圖表垂直十字線
     // =========================================
-    function jumpToLatest() {
-        if (!etfChartInstance) return;
-        
-        const barsCount = parseInt(document.getElementById('visibleBars').value) || 20;
-        const labels = etfChartInstance.data.labels;
-        const totalBars = labels.length;
-        
-        if (totalBars === 0) return;
-
-        // 計算最新的 N 根 K 棒的起點
-        const startIndex = Math.max(0, totalBars - barsCount);
-        
-        currentMinLabel = labels[startIndex];
-        currentMaxLabel = labels[totalBars - 1];
-        
-        applyGlobalView();
-    }
-
-    function resetChartsZoom() {
-        currentMinLabel = undefined;
-        currentMaxLabel = undefined;
-        applyGlobalView();
-    }
-
-    // =========================================
-    // 3. 自訂擴充套件：跨圖表垂直十字線
-    // =========================================
-    let crosshairX = null;
+    let crosshairX = null; // 全域變數，紀錄滑鼠目前的 X 座標
 
     const crosshairPlugin = {
         id: 'crosshair',
@@ -180,11 +113,12 @@
             const { event, inChartArea } = args;
             if (event.type === 'mousemove') {
                 if (inChartArea) {
-                    crosshairX = event.x;
+                    crosshairX = event.x; // 更新滑鼠位置
+                    // 呼叫另一張圖表重新繪製以顯示十字線
                     const otherChart = chart === etfChartInstance ? yieldChartInstance : etfChartInstance;
                     if (otherChart) otherChart.draw();
                 } else {
-                    crosshairX = null;
+                    crosshairX = null; // 滑鼠離開圖表區域時清除
                     const otherChart = chart === etfChartInstance ? yieldChartInstance : etfChartInstance;
                     if (otherChart) otherChart.draw();
                 }
@@ -198,14 +132,16 @@
             if (crosshairX !== null) {
                 const ctx = chart.ctx;
                 const { top, bottom, left, right } = chart.chartArea;
+                
+                // 確保垂直線只畫在圖表內部區域
                 if (crosshairX >= left && crosshairX <= right) {
                     ctx.save();
                     ctx.beginPath();
                     ctx.moveTo(crosshairX, top);
                     ctx.lineTo(crosshairX, bottom);
                     ctx.lineWidth = 1.5;
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-                    ctx.setLineDash([5, 5]);
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                    ctx.setLineDash([5, 5]); // 設定虛線樣式
                     ctx.stroke();
                     ctx.restore();
                 }
@@ -214,7 +150,7 @@
     };
 
     // =========================================
-    // 4. 資料處理與圖表渲染
+    // 3. 資料處理與圖表渲染
     // =========================================
     function calculateSMA(data, period) {
         const sma = [];
@@ -257,6 +193,7 @@
         }
     }
 
+    // 共同的 X 軸設定
     const commonXAxis = { ticks: { color: '#ccc', maxTicksLimit: 15 }, grid: { color: 'rgba(255, 255, 255, 0.05)' } };
 
     async function updateEtfChart() {
@@ -282,19 +219,19 @@
                 responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
                 plugins: { zoom: sharedZoomOptions, legend: { labels: { color: '#ccc' } } },
                 scales: {
-                    // 套用全局的視角
-                    x: { ...commonXAxis, min: currentMinLabel, max: currentMaxLabel },
+                    x: commonXAxis,
+                    // 隱藏的左軸(佔位)，讓右軸價格能完美對齊下方圖表
                     yLeft: { position: 'left', ticks: { display: false }, grid: { drawBorder: false, color: 'transparent' } },
                     yRight: { position: 'right', ticks: { color: '#ccc' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }
                 }
             },
-            plugins: [crosshairPlugin]
+            plugins: [crosshairPlugin] // 載入十字線套件
         });
     }
 
     async function updateYieldChart() {
         const filename = document.getElementById('yieldSelect').value;
-        const maPeriod = parseInt(document.getElementById('yieldMaPeriod').value) || 60;
+        const maPeriod = parseInt(document.getElementById('yieldMaPeriod').value) || 200;
         const labelName = document.getElementById('yieldSelect').options[document.getElementById('yieldSelect').selectedIndex].text;
         
         const data = await fetchData(filename);
@@ -315,25 +252,32 @@
                 responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
                 plugins: { zoom: sharedZoomOptions, legend: { labels: { color: '#ccc' } } },
                 scales: {
-                    // 套用全局的視角
-                    x: { ...commonXAxis, min: currentMinLabel, max: currentMaxLabel },
+                    x: commonXAxis,
+                    // 殖利率放左軸，右側放一個隱藏軸(佔位)
                     yLeft: { position: 'left', ticks: { color: '#ccc' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
                     yRight: { position: 'right', ticks: { display: false }, grid: { drawBorder: false, color: 'transparent' } }
                 }
             },
-            plugins: [crosshairPlugin]
+            plugins: [crosshairPlugin] // 載入十字線套件
         });
     }
 
-    // =========================================
-    // 5. 網頁載入初始化 (等待資料載入後強制鎖定最新區間)
-    // =========================================
-    window.onload = async () => {
-        // 使用 Promise.all 確保兩張圖表的資料都抓完並畫好
-        await Promise.all([updateEtfChart(), updateYieldChart()]);
-        
-        // 初始載入完成後，直接模擬點擊「跳到最新」按鈕，鎖定預設的 20 根 K 棒
-        jumpToLatest();
+    function resetChartsZoom() {
+        if (etfChartInstance) {
+            etfChartInstance.options.scales.x.min = undefined;
+            etfChartInstance.options.scales.x.max = undefined;
+            etfChartInstance.update();
+        }
+        if (yieldChartInstance) {
+            yieldChartInstance.options.scales.x.min = undefined;
+            yieldChartInstance.options.scales.x.max = undefined;
+            yieldChartInstance.update();
+        }
+    }
+
+    window.onload = () => {
+        updateEtfChart();
+        updateYieldChart();
     };
 </script>
 
